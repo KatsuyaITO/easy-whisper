@@ -16,4 +16,4 @@ dependencies = [
 ]
 
 [project.scripts]
-easy-whisper = "main:main"
+easy-whisper = "easy_whisper:main"

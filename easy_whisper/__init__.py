@@ -25,9 +25,12 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Whisper Transcription App")
 
-templates = Jinja2Templates(directory="templates")
+# Get templates directory relative to this file (one level up from package)
+_package_dir = Path(__file__).parent
+_project_root = _package_dir.parent
+templates = Jinja2Templates(directory=str(_project_root / "templates"))
 
-UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", "uploads"))
+UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", str(_project_root / "uploads")))
 UPLOAD_DIR.mkdir(exist_ok=True)
 
 # Whisper model configuration
