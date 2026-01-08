@@ -194,6 +194,58 @@
             color: #888;
             margin-top: 10px;
         }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .form-group label {
+            font-weight: 600;
+            color: #333;
+            font-size: 14px;
+        }
+
+        .form-group select,
+        .form-group input[type="text"] {
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+            background: white;
+            transition: border-color 0.3s;
+        }
+
+        .form-group select:focus,
+        .form-group input[type="text"]:focus {
+            outline: none;
+            border-color: #007bff;
+        }
+
+        .form-group small {
+            color: #666;
+            font-size: 12px;
+        }
+
+        .settings-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        @media (max-width: 600px) {
+            .settings-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .model-info {
+            font-size: 11px;
+            color: #888;
+            margin-top: 4px;
+            font-style: italic;
+        }
     </style>
 </head>
 <body>
@@ -205,6 +257,49 @@
               hx-target="#result"
               hx-encoding="multipart/form-data"
               hx-indicator="#loading">
+
+            <div class="settings-grid">
+                <div class="form-group">
+                    <label for="model-select">Whisper Model</label>
+                    <select name="model" id="model-select" onchange="updateModelInfo()">
+                        <optgroup label="Multilingual Models">
+                            <option value="openai/whisper-large-v3-turbo">Large V3 Turbo (Fastest large model)</option>
+                            <option value="openai/whisper-large-v3" selected>Large V3 (Best accuracy)</option>
+                            <option value="openai/whisper-large">Large V2</option>
+                            <option value="openai/whisper-medium">Medium (Balanced)</option>
+                            <option value="openai/whisper-small">Small (Fast)</option>
+                            <option value="openai/whisper-base">Base (Very fast)</option>
+                            <option value="openai/whisper-tiny">Tiny (Fastest)</option>
+                        </optgroup>
+                        <optgroup label="English-Only Models">
+                            <option value="openai/whisper-medium.en">Medium EN</option>
+                            <option value="openai/whisper-small.en">Small EN</option>
+                            <option value="openai/whisper-base.en">Base EN</option>
+                            <option value="openai/whisper-tiny.en">Tiny EN</option>
+                        </optgroup>
+                    </select>
+                    <small id="model-info" class="model-info">Best accuracy, slower processing</small>
+                </div>
+
+                <div class="form-group">
+                    <label for="device-select">Processing Device</label>
+                    <select name="device" id="device-select">
+                        <option value="auto" selected>Auto-detect</option>
+                        <option value="cuda">CUDA (GPU)</option>
+                        <option value="cpu">CPU</option>
+                    </select>
+                    <small>GPU recommended for faster processing</small>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="filename-input">Output Filename (optional)</label>
+                <input type="text"
+                       name="filename"
+                       id="filename-input"
+                       placeholder="transcription.txt">
+                <small>Leave empty for default filename</small>
+            </div>
 
             <div class="file-input-wrapper">
                 <input type="file"
@@ -236,6 +331,26 @@
     <div id="result"></div>
 
     <script>
+        const modelDescriptions = {
+            'openai/whisper-large-v3-turbo': 'Fastest large model with excellent accuracy',
+            'openai/whisper-large-v3': 'Best accuracy, slower processing',
+            'openai/whisper-large': 'High accuracy, slower processing',
+            'openai/whisper-medium': 'Balanced speed and accuracy',
+            'openai/whisper-small': 'Fast processing, good accuracy',
+            'openai/whisper-base': 'Very fast, basic accuracy',
+            'openai/whisper-tiny': 'Fastest, minimal accuracy',
+            'openai/whisper-medium.en': 'Balanced (English only)',
+            'openai/whisper-small.en': 'Fast (English only)',
+            'openai/whisper-base.en': 'Very fast (English only)',
+            'openai/whisper-tiny.en': 'Fastest (English only)'
+        };
+
+        function updateModelInfo() {
+            const select = document.getElementById('model-select');
+            const info = document.getElementById('model-info');
+            info.textContent = modelDescriptions[select.value] || '';
+        }
+
         function updateFileName(input) {
             const fileName = input.files[0]?.name || '';
             document.getElementById('file-name').textContent = fileName;
@@ -252,11 +367,14 @@
 
         function downloadText() {
             const text = document.getElementById('transcription-output').textContent;
+            const customFilename = document.getElementById('filename-input')?.value || 'transcription.txt';
+            const filename = customFilename.endsWith('.txt') ? customFilename : customFilename + '.txt';
+
             const blob = new Blob([text], { type: 'text/plain' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = 'transcription.txt';
+            a.download = filename;
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);

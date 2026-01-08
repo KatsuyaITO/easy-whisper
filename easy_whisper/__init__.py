@@ -7,7 +7,7 @@ from pathlib import Path
 
 import torch
 from dotenv import load_dotenv
-from fastapi import FastAPI, UploadFile, File, Request
+from fastapi import FastAPI, UploadFile, File, Request, Form
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline
@@ -34,38 +34,61 @@ UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", "uploads")).absolute()
 UPLOAD_DIR.mkdir(exist_ok=True)
 
 # Whisper model configuration
-MODEL_ID = os.getenv("WHISPER_MODEL_ID", "openai/whisper-large-v3")
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-TORCH_DTYPE = torch.float16 if torch.cuda.is_available() else torch.float32
+DEFAULT_MODEL_ID = os.getenv("WHISPER_MODEL_ID", "openai/whisper-large-v3")
+DEFAULT_DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
-# Global pipeline (loaded once)
-pipe = None
+# Cache for pipelines (key: model_id + device)
+pipeline_cache = {}
 
 
-def get_pipeline():
-    """Load Whisper pipeline (lazy loading)."""
-    global pipe
-    if pipe is None:
-        logger.info(f"Loading Whisper model on {DEVICE}...")
-        model = AutoModelForSpeechSeq2Seq.from_pretrained(
-            MODEL_ID,
-            torch_dtype=TORCH_DTYPE,
-            low_cpu_mem_usage=True,
-            use_safetensors=True,
-        )
-        model.to(DEVICE)
+def get_pipeline(model_id: str = None, device: str = "auto"):
+    """Load Whisper pipeline with caching support."""
+    # Use defaults if not specified
+    if model_id is None:
+        model_id = DEFAULT_MODEL_ID
 
-        processor = AutoProcessor.from_pretrained(MODEL_ID)
+    # Handle auto device selection
+    if device == "auto":
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+    elif device == "cuda" and not torch.cuda.is_available():
+        logger.warning("CUDA requested but not available, falling back to CPU")
+        device = "cpu"
 
-        pipe = pipeline(
-            "automatic-speech-recognition",
-            model=model,
-            tokenizer=processor.tokenizer,
-            feature_extractor=processor.feature_extractor,
-            torch_dtype=TORCH_DTYPE,
-            device=DEVICE,
-        )
-        logger.info("Model loaded successfully!")
+    # Create cache key
+    cache_key = f"{model_id}:{device}"
+
+    # Return cached pipeline if available
+    if cache_key in pipeline_cache:
+        logger.info(f"Using cached pipeline for {cache_key}")
+        return pipeline_cache[cache_key]
+
+    # Load new pipeline
+    logger.info(f"Loading Whisper model {model_id} on {device}...")
+    torch_dtype = torch.float16 if device == "cuda" else torch.float32
+
+    model = AutoModelForSpeechSeq2Seq.from_pretrained(
+        model_id,
+        torch_dtype=torch_dtype,
+        low_cpu_mem_usage=True,
+        use_safetensors=True,
+    )
+    model.to(device)
+
+    processor = AutoProcessor.from_pretrained(model_id)
+
+    pipe = pipeline(
+        "automatic-speech-recognition",
+        model=model,
+        tokenizer=processor.tokenizer,
+        feature_extractor=processor.feature_extractor,
+        torch_dtype=torch_dtype,
+        device=device,
+    )
+
+    # Cache the pipeline
+    pipeline_cache[cache_key] = pipe
+    logger.info(f"Model loaded successfully! Cache key: {cache_key}")
+
     return pipe
 
 
@@ -98,9 +121,15 @@ async def index(request: Request):
 
 
 @app.post("/transcribe")
-async def transcribe(file: UploadFile = File(...)):
+async def transcribe(
+    file: UploadFile = File(...),
+    model: str = Form(DEFAULT_MODEL_ID),
+    device: str = Form("auto"),
+    filename: str = Form("")
+):
     """Transcribe uploaded audio file."""
     logger.info(f"Received transcription request for file: {file.filename}")
+    logger.info(f"Model: {model}, Device: {device}, Custom filename: {filename}")
     temp_path = None
     wav_path = None
 
@@ -119,9 +148,9 @@ async def transcribe(file: UploadFile = File(...)):
         # Convert to WAV format
         wav_path = convert_to_wav(temp_path)
 
-        # Load pipeline and transcribe
-        logger.info("Loading transcription pipeline...")
-        transcription_pipe = get_pipeline()
+        # Load pipeline with user-selected model and device
+        logger.info(f"Loading transcription pipeline for model: {model} on device: {device}...")
+        transcription_pipe = get_pipeline(model_id=model, device=device)
 
         logger.info(f"Starting transcription of: {wav_path}")
         result = transcription_pipe(
@@ -174,8 +203,11 @@ async def health():
     """Health check endpoint."""
     return {
         "status": "ok",
-        "device": DEVICE,
+        "default_device": DEFAULT_DEVICE,
         "cuda_available": torch.cuda.is_available(),
+        "default_model": DEFAULT_MODEL_ID,
+        "cached_pipelines": len(pipeline_cache),
+        "cache_keys": list(pipeline_cache.keys())
     }
 
 
@@ -183,7 +215,7 @@ def main():
     """Main entry point for the application."""
     import uvicorn
     host = os.getenv("HOST", "localhost")
-    port = int(os.getenv("PORT", "8000"))
+    port = int(os.getenv("PORT", "7860"))
     logger.info(f"Starting server on {host}:{port}")
     uvicorn.run(app, host=host, port=port)
 
