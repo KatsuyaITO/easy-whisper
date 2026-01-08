@@ -1,0 +1,19 @@
+[project]
+name = "easy-whisper"
+version = "0.1.0"
+description = "A simple web application for audio transcription using OpenAI's Whisper model"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "accelerate>=1.12.0",
+    "fastapi>=0.127.0",
+    "jinja2>=3.1.6",
+    "python-dotenv>=1.0.0",
+    "python-multipart>=0.0.21",
+    "torch>=2.9.1",
+    "transformers>=4.57.3",
+    "uvicorn>=0.40.0",
+]
+
+[project.scripts]
+easy-whisper = "main:main"
